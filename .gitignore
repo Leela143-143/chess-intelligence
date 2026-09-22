@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.local
+.DS_Store
+npm-debug.log*
+# Stockfish binaries are copied in from node_modules at build time
+public/stockfish/
