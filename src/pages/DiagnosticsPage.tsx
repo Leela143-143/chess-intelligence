@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useEngine } from "@/lib/engineContext";
 import { ENGINE_BUILD } from "@/lib/engine/buildInfo";
+import { ASSET_MANIFEST, licenseSummary } from "@/assets/manifest";
 import { detectDevice, classifyDevice, getModelState } from "@/lib/coach/gemma";
 import { MODEL_PROFILES } from "@/lib/coach/types";
 import { db } from "@/lib/db/schema";
@@ -93,6 +94,35 @@ export default function DiagnosticsPage() {
           <dd>{device ? String(device.webAssembly) : "—"}</dd>
           <dt>touch</dt>
           <dd>{device ? String(device.coarsePointer) : "—"}</dd>
+        </dl>
+      </div>
+
+      <div className="card">
+        <h2>Credits &amp; licences</h2>
+        <p className="small faint">
+          Every shipped asset, its source, its licence and its attribution duty. No image was
+          scraped or hotlinked; board themes and piece sets are generated in code.
+        </p>
+        <ul className="small" style={{ margin: "8px 0", paddingLeft: 18 }}>
+          {licenseSummary().map((entry) => (
+            <li key={entry.license}>
+              <strong>{entry.license}</strong> — {entry.count} asset{entry.count === 1 ? "" : "s"}
+            </li>
+          ))}
+        </ul>
+        <dl className="kv">
+          {ASSET_MANIFEST.map((asset) => (
+            <div key={asset.id}>
+              <dt>{asset.kind}</dt>
+              <dd>
+                {asset.label}
+                <div className="small faint">
+                  {asset.author} · {asset.license} · redistribution {asset.redistribution}
+                  {asset.path ? ` · ${asset.path}` : ""}
+                </div>
+              </dd>
+            </div>
+          ))}
         </dl>
       </div>
 

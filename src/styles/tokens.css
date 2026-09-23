@@ -1,0 +1,377 @@
+/* ==========================================================================
+   Chess Intelligence — tokens.css
+   Identity: "Obsidian Instrument" (docs/design-system.md §1–§7)
+   Self-hosted type (SIL OFL 1.1, see docs/licenses.md), semantic colour,
+   verified contrast, six board themes, six piece sets.
+   ========================================================================== */
+
+/* --------------------------------------------------------------- typefaces */
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-italic-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter var";
+  src: url("/fonts/inter-latin-var.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  /* ------------------------------------------------------------- families */
+  --font-display: "Instrument Serif", "Iowan Old Style", "Palatino Linotype",
+    Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  --font-ui: "Inter var", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono",
+    "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+  --font: var(--font-ui);
+
+  /* ------------------------------------------------------------ type scale */
+  --fs-display-xl: clamp(2.75rem, 11vw, 7rem);
+  --fs-display-l: clamp(2rem, 6.4vw, 3.75rem);
+  --fs-display-m: clamp(1.5rem, 4vw, 2.25rem);
+  --fs-display-s: clamp(1.25rem, 3vw, 1.6rem);
+  --fs-title: 1.0625rem;
+  --fs-body: 0.9375rem;
+  --fs-small: 0.8125rem;
+  --fs-micro: 0.6875rem;
+
+  /* --------------------------------------------------------------- spacing */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --s-9: 96px;
+  --s-10: 144px;
+  --gutter: 16px;
+
+  /* ---------------------------------------------------------------- radius */
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 10px;
+  --r-pill: 999px;
+  --radius: var(--r-2);
+  --radius-sm: var(--r-1);
+  --radius-lg: var(--r-3);
+
+  /* ---------------------------------------------------------------- motion */
+  --e-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --e-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --e-precise: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --e-heavy: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --d-1: 120ms;
+  --d-2: 220ms;
+  --d-3: 420ms;
+  --d-4: 700ms;
+
+  /* ------------------------------------------------------------------ z */
+  --z-atmosphere: 0;
+  --z-content: 1;
+  --z-sticky: 30;
+  --z-cursor: 70;
+  --z-palette: 80;
+  --z-toast: 90;
+  --z-sheet: 60;
+
+  --nav-h: 58px;
+  --rail-h: 60px;
+}
+
+/* ==========================================================================
+   App themes
+   ========================================================================== */
+:root,
+html[data-theme="dark"] {
+  --bg: #08080a;
+  --surface: #0e0e12;
+  --surface-2: #14141a;
+  --surface-3: #1c1d24;
+  --surface-raised: #17181f;
+  --text: #f4efe6;
+  --text-dim: #a8a294;
+  --text-faint: #8a8477;
+  --accent: #5fd3bd;
+  --accent-ink: #06201c;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 38%, transparent);
+  --steel: #8fa8c8;
+  --pos: #6fce93;
+  --neg: #e4695f;
+  --warn: #e2a33d;
+  --line: color-mix(in srgb, var(--text) 11%, transparent);
+  --line-strong: color-mix(in srgb, var(--text) 19%, transparent);
+  --grain-opacity: 0.035;
+  --grid-opacity: 0.025;
+  --glow: color-mix(in srgb, var(--accent) 8%, transparent);
+  --shadow-1: 0 10px 30px -12px rgba(0, 0, 0, 0.7);
+  --shadow-2: 0 26px 70px -24px rgba(0, 0, 0, 0.85);
+  --scrim: rgba(4, 4, 6, 0.72);
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #f7f4ee;
+  --surface: #ffffff;
+  --surface-2: #f2efe7;
+  --surface-3: #e9e5da;
+  --surface-raised: #ffffff;
+  --text: #14140f;
+  --text-dim: #4d4a41;
+  --text-faint: #6b675c;
+  --accent: #0f6b5f;
+  --accent-ink: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 30%, transparent);
+  --steel: #3f5b80;
+  --pos: #1f7a45;
+  --neg: #b3261e;
+  --warn: #8a5a00;
+  --line: color-mix(in srgb, var(--text) 14%, transparent);
+  --line-strong: color-mix(in srgb, var(--text) 24%, transparent);
+  --grain-opacity: 0.02;
+  --grid-opacity: 0.04;
+  --glow: color-mix(in srgb, var(--accent) 5%, transparent);
+  --shadow-1: 0 10px 26px -16px rgba(30, 26, 18, 0.4);
+  --shadow-2: 0 24px 60px -26px rgba(30, 26, 18, 0.45);
+  --scrim: rgba(24, 22, 18, 0.42);
+  color-scheme: light;
+}
+
+html[data-theme="oled"] {
+  --bg: #000000;
+  --surface: #07070a;
+  --surface-2: #0d0d12;
+  --surface-3: #15151c;
+  --surface-raised: #101017;
+  --line: color-mix(in srgb, var(--text) 14%, transparent);
+  --line-strong: color-mix(in srgb, var(--text) 24%, transparent);
+  --grain-opacity: 0;
+}
+
+html[data-theme="contrast"] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #080808;
+  --surface-3: #121212;
+  --surface-raised: #0a0a0a;
+  --text: #ffffff;
+  --text-dim: #eaeaea;
+  --text-faint: #d2d2d2;
+  --accent: #6ef0d8;
+  --accent-ink: #00110e;
+  --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-line: var(--accent);
+  --steel: #aecdf5;
+  --pos: #7df2a8;
+  --neg: #ff8d84;
+  --warn: #ffd45e;
+  --line: #ffffff;
+  --line-strong: #ffffff;
+  --grain-opacity: 0;
+  --grid-opacity: 0;
+  --shadow-1: none;
+  --shadow-2: none;
+}
+
+/* ==========================================================================
+   Board themes — squares, coordinates, frame, highlight tints
+   ========================================================================== */
+:root {
+  --sq-light: #9fa6b4;
+  --sq-dark: #3a4050;
+  --sq-light-ink: #3a4050;
+  --sq-dark-ink: #9fa6b4;
+  --sq-last: color-mix(in srgb, var(--accent) 42%, transparent);
+  --sq-selected: color-mix(in srgb, var(--accent) 55%, transparent);
+  --sq-check: color-mix(in srgb, var(--neg) 78%, transparent);
+  --sq-target: color-mix(in srgb, var(--accent) 30%, transparent);
+  --sq-hover: rgba(255, 255, 255, 0.07);
+  --board-frame: #1a1c22;
+  --board-edge: rgba(255, 255, 255, 0.07);
+  --board-grain: 0;
+  --board-coord-size: 0.22em;
+}
+
+[data-board="obsidian"] {
+  --sq-light: #9fa6b4;
+  --sq-dark: #3a4050;
+  --sq-light-ink: #333a48;
+  --sq-dark-ink: #b9c2d2;
+  --board-frame: #15171d;
+  --board-grain: 0;
+}
+[data-board="ivory"] {
+  --sq-light: #efe4d2;
+  --sq-dark: #9a7b52;
+  --sq-light-ink: #7a5f3b;
+  --sq-dark-ink: #4a3922;
+  --board-frame: #2a231b;
+  --board-grain: 1;
+}
+[data-board="slate"] {
+  --sq-light: #b8c2d0;
+  --sq-dark: #5b667a;
+  --sq-light-ink: #4a5364;
+  --sq-dark-ink: #dfe6f0;
+  --board-frame: #232833;
+  --board-grain: 0;
+}
+[data-board="walnut"] {
+  --sq-light: #d8b285;
+  --sq-dark: #7d4f2c;
+  --sq-light-ink: #6b4423;
+  --sq-dark-ink: #f0dcc4;
+  --board-frame: #2b1a0e;
+  --board-grain: 1;
+}
+[data-board="paper"] {
+  --sq-light: #f6f0e2;
+  --sq-dark: #cbbfa3;
+  --sq-light-ink: #8d8163;
+  --sq-dark-ink: #564c36;
+  --board-frame: #ded5c0;
+  --board-edge: rgba(30, 26, 18, 0.14);
+  --board-grain: 1;
+}
+[data-board="carbon"] {
+  --sq-light: #2a2d35;
+  --sq-dark: #1a1c22;
+  --sq-light-ink: #171a20;
+  --sq-dark-ink: #6f7688;
+  --board-frame: #0b0c0f;
+  --board-edge: rgba(255, 255, 255, 0.1);
+  --board-grain: 0;
+}
+
+/* ==========================================================================
+   Piece sets (six) — one original SVG geometry, themed by these tokens
+   ========================================================================== */
+:root {
+  --pc-w-fill: #f3efe6;
+  --pc-w-stroke: #1a1c22;
+  --pc-b-fill: #1a1c22;
+  --pc-b-stroke: #e8e4da;
+  --pc-w-hi: rgba(255, 255, 255, 0.5);
+  --pc-b-hi: rgba(255, 255, 255, 0.34);
+  --pc-w-lo: rgba(0, 0, 0, 0.16);
+  --pc-b-lo: rgba(0, 0, 0, 0.6);
+  --pc-stroke-w: 2.4;
+  --pc-detail: 1;
+  --pc-detail-w: 1.5;
+  --pc-construct: 0;
+  --pc-drop: 0 2px 3px rgba(0, 0, 0, 0.45);
+  --pc-ink: #1a1c22;       /* dark accent drawn on light pieces */
+}
+
+[data-pieces="classic"] {
+  --pc-w-fill: #f5f1e8;
+  --pc-w-stroke: #23252c;
+  --pc-b-fill: #23252c;
+  --pc-b-stroke: #d9d5cb;
+  --pc-stroke-w: 2.4;
+  --pc-detail: 1;
+  --pc-drop: 0 2px 3px rgba(0, 0, 0, 0.42);
+}
+
+[data-pieces="tournament"] {
+  --pc-w-fill: #eceae2;
+  --pc-w-stroke: #14151a;
+  --pc-b-fill: #14151a;
+  --pc-b-stroke: #cfc9bb;
+  --pc-stroke-w: 3.2;
+  --pc-detail: 1;
+  --pc-detail-w: 1;
+  --pc-w-hi: rgba(255, 255, 255, 0.3);
+  --pc-b-hi: rgba(255, 255, 255, 0.22);
+  --pc-drop: 0 2px 3px rgba(0, 0, 0, 0.5);
+}
+
+[data-pieces="editorial"] {
+  --pc-w-fill: #fbf8f1;
+  --pc-w-stroke: #0f1013;
+  --pc-b-fill: #121317;
+  --pc-b-stroke: #f4efe6;
+  --pc-stroke-w: 4.4;
+  --pc-detail: 1;
+  --pc-detail-w: 2.6;
+  --pc-w-hi: rgba(255, 255, 255, 0);
+  --pc-b-hi: rgba(255, 255, 255, 0);
+  --pc-w-lo: rgba(0, 0, 0, 0);
+  --pc-b-lo: rgba(0, 0, 0, 0);
+  --pc-drop: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+[data-pieces="minimal"] {
+  --pc-w-fill: #ffffff;
+  --pc-w-stroke: transparent;
+  --pc-b-fill: #101216;
+  --pc-b-stroke: transparent;
+  --pc-stroke-w: 0;
+  --pc-detail: 0;
+  --pc-w-hi: rgba(0, 0, 0, 0.1);
+  --pc-b-hi: rgba(255, 255, 255, 0.16);
+  --pc-w-lo: rgba(0, 0, 0, 0.12);
+  --pc-b-lo: rgba(0, 0, 0, 0.5);
+  --pc-drop: 0 4px 8px -2px rgba(0, 0, 0, 0.5);
+}
+
+[data-pieces="sculptural"] {
+  --pc-w-fill: #f0ece2;
+  --pc-w-stroke: transparent;
+  --pc-b-fill: #23262e;
+  --pc-b-stroke: transparent;
+  --pc-stroke-w: 0;
+  --pc-detail: 0;
+  --pc-w-hi: rgba(255, 255, 255, 0.85);
+  --pc-b-hi: rgba(255, 255, 255, 0.45);
+  --pc-w-lo: rgba(0, 0, 0, 0.28);
+  --pc-b-lo: rgba(0, 0, 0, 0.75);
+  --pc-drop: 0 8px 14px -6px rgba(0, 0, 0, 0.7);
+}
+
+[data-pieces="technical"] {
+  --pc-w-fill: rgba(255, 255, 255, 0.06);
+  --pc-w-stroke: #dfe6f0;
+  --pc-b-fill: rgba(10, 12, 16, 0.55);
+  --pc-b-stroke: #5fd3bd;
+  --pc-stroke-w: 2;
+  --pc-detail: 1;
+  --pc-detail-w: 1.2;
+  --pc-construct: 1;
+  --pc-w-hi: rgba(255, 255, 255, 0);
+  --pc-b-hi: rgba(255, 255, 255, 0);
+  --pc-w-lo: rgba(0, 0, 0, 0);
+  --pc-b-lo: rgba(0, 0, 0, 0.3);
+  --pc-drop: none;
+}
+
+/* Board theme may invert the default piece-side contrast on light boards */
+[data-board="paper"] {
+  --pc-w-stroke: #2b2b28;
+  --pc-b-fill: #22242a;
+}

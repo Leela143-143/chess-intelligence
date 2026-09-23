@@ -8,6 +8,7 @@ import {
   type SettingsRecord,
 } from "@/lib/db/schema";
 import { useSettings } from "@/lib/settingsContext";
+import { usePlayer } from "@/lib/player/context";
 import {
   detectDevice,
   classifyDevice,
@@ -19,96 +20,187 @@ import {
 } from "@/lib/coach/gemma";
 import { MODEL_PROFILES } from "@/lib/coach/types";
 import { ENGINE_BUILD } from "@/lib/engine/buildInfo";
+import { INTENSITY_SETTINGS } from "@/lib/chess/review";
 import { downloadJson, exportAllDataAsJson, importBackupData } from "@/lib/db/backup";
+import Piece from "@/components/Piece";
 
 /**
- * Settings (spec §56–58, §66, §75–77, §82).
- * Appearance, board/pieces, engine & AI, data export/import, privacy.
+ * Settings (brief §68 — appearance, engine, data, privacy).
+ * Board and piece pickers preview the real renderer rather than a swatch.
  */
 
 const THEMES: Array<{ id: SettingsRecord["theme"]; label: string }> = [
-  { id: "dark", label: "Dark" },
-  { id: "light", label: "Light" },
-  { id: "oled", label: "OLED Dark" },
-  { id: "contrast", label: "High Contrast" },
+  { id: "dark", label: "Obsidian" },
+  { id: "light", label: "Ivory" },
+  { id: "oled", label: "OLED" },
+  { id: "contrast", label: "Contrast" },
 ];
 
 const BOARDS: Array<{ id: SettingsRecord["boardTheme"]; label: string }> = [
-  { id: "classic", label: "Classic" },
-  { id: "wood", label: "Wood" },
-  { id: "marble", label: "Marble" },
+  { id: "obsidian", label: "Obsidian" },
+  { id: "ivory", label: "Ivory" },
   { id: "slate", label: "Slate" },
-  { id: "minimal", label: "Minimal" },
+  { id: "walnut", label: "Walnut" },
+  { id: "paper", label: "Paper" },
+  { id: "carbon", label: "Carbon" },
 ];
 
 const PIECES: Array<{ id: SettingsRecord["pieceSet"]; label: string }> = [
   { id: "classic", label: "Classic" },
-  { id: "neo", label: "Neo" },
+  { id: "tournament", label: "Tournament" },
+  { id: "editorial", label: "Editorial" },
   { id: "minimal", label: "Minimal" },
+  { id: "sculptural", label: "Sculptural" },
+  { id: "technical", label: "Technical" },
 ];
+
+function Switch({
+  title,
+  detail,
+  checked,
+  onChange,
+}: {
+  title: string;
+  detail: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="switch-row">
+      <span className="switch-copy">
+        <span className="t">{title}</span>
+        <span className="d">{detail}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
+  );
+}
 
 export default function SettingsPage() {
   const { settings, update } = useSettings();
+  const player = usePlayer();
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [modelState, setModelState] = useState(getModelState());
+  const [aliases, setAliases] = useState("");
   const [dataNotice, setDataNotice] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getProfile().then(setProfile).catch(() => undefined);
+    getProfile()
+      .then((loaded) => {
+        setProfile(loaded);
+        setAliases(settings.aliases.join(", "));
+      })
+      .catch(() => undefined);
     detectDevice().then(setDevice).catch(() => setDevice(null));
+     
   }, []);
 
   useEffect(() => onModelStateChange(setModelState), []);
 
-  if (!profile) return <div className="skeleton" style={{ height: 300 }} />;
+  if (!profile) return <div className="skeleton" style={{ height: 300 }} aria-label="Loading" />;
+
+  const saveAliases = () => {
+    const list = aliases
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    void update({ aliases: list });
+    setDataNotice(
+      list.length === 0
+        ? "Aliases cleared — games can no longer be attributed to you automatically."
+        : `Saved ${list.length} alias${list.length === 1 ? "" : "es"}. New imports will be tagged automatically.`,
+    );
+  };
 
   return (
-    <div className="stack">
-      <h1>Settings</h1>
+    <div className="stack loose">
+      <header className="page-head">
+        <div className="page-head-titles">
+          <p className="eyebrow">Configuration</p>
+          <h1 className="display-m">Settings</h1>
+        </div>
+      </header>
 
-      <div className="card stack">
-        <h2>Profile</h2>
-        <div className="row">
+      {/* ---------------------------------------------------------- identity */}
+      <section className="panel stack">
+        <div className="panel-head">
+          <div>
+            <div className="panel-eyebrow">Identity</div>
+            <div className="panel-title">Who is playing</div>
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="display-name">Display name</label>
           <input
+            id="display-name"
             type="text"
             value={profile.displayName}
             onChange={(event) => setProfile({ ...profile, displayName: event.target.value })}
-            placeholder="Display name"
-            aria-label="Display name"
-          />
-          <input
-            type="text"
-            value={profile.avatar}
-            onChange={(event) => setProfile({ ...profile, avatar: event.target.value.slice(0, 2) })}
-            style={{ width: 64, textAlign: "center" }}
-            aria-label="Avatar"
           />
         </div>
-        <input
-          type="text"
-          value={profile.bio}
-          onChange={(event) => setProfile({ ...profile, bio: event.target.value })}
-          placeholder="Bio (optional)"
-          aria-label="Bio"
-        />
+        <div className="field">
+          <label htmlFor="aliases">PGN names you play under</label>
+          <div className="row">
+            <input
+              id="aliases"
+              type="text"
+              value={aliases}
+              onChange={(event) => setAliases(event.target.value)}
+              placeholder="LeelaGunaVardhan, Leela143"
+            />
+            <button className="btn small" onClick={saveAliases}>
+              Save
+            </button>
+          </div>
+          <p className="panel-hint">
+            Used to decide which side of an imported game is yours. Without it, stats stay
+            colour-neutral instead of guessing.
+          </p>
+        </div>
+        <div className="field">
+          <label htmlFor="bio">Bio</label>
+          <input
+            id="bio"
+            type="text"
+            value={profile.bio}
+            onChange={(event) => setProfile({ ...profile, bio: event.target.value })}
+            placeholder="Optional"
+          />
+        </div>
         <div className="btn-row">
-          <button className="btn small primary" onClick={() => void saveProfile(profile)}>
+          <button
+            className="btn primary small"
+            onClick={() => {
+              void saveProfile(profile);
+              setDataNotice("Profile saved.");
+            }}
+          >
             Save profile
           </button>
         </div>
-      </div>
+      </section>
 
-      <div className="card stack">
-        <h2>Appearance</h2>
-        <div>
-          <div className="small dim">Theme</div>
-          <div className="seg" role="group" aria-label="Theme">
+      {/* -------------------------------------------------------- appearance */}
+      <section className="panel stack">
+        <div className="panel-head">
+          <div>
+            <div className="panel-eyebrow">Appearance</div>
+            <div className="panel-title">Studio</div>
+          </div>
+        </div>
+        <div className="field">
+          <label>Theme</label>
+          <div className="seg">
             {THEMES.map((theme) => (
               <button
                 key={theme.id}
-                className={settings.theme === theme.id ? "active" : ""}
+                aria-pressed={settings.theme === theme.id}
                 onClick={() => void update({ theme: theme.id })}
               >
                 {theme.label}
@@ -116,118 +208,177 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
-        <div>
-          <div className="small dim">Board</div>
-          <div className="seg" role="group" aria-label="Board theme">
+
+        <div className="field">
+          <label>Board</label>
+          <div className="board-picker">
             {BOARDS.map((board) => (
               <button
                 key={board.id}
-                className={settings.boardTheme === board.id ? "active" : ""}
+                className="board-swatch"
+                data-board={board.id}
+                aria-pressed={settings.boardTheme === board.id}
                 onClick={() => void update({ boardTheme: board.id })}
               >
+                <span className="sw">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </span>
                 {board.label}
               </button>
             ))}
           </div>
         </div>
-        <div>
-          <div className="small dim">Pieces</div>
-          <div className="seg" role="group" aria-label="Piece set">
-            {PIECES.map((piece) => (
+
+        <div className="field">
+          <label>Piece set</label>
+          <div className="piece-picker">
+            {PIECES.map((set) => (
               <button
-                key={piece.id}
-                className={settings.pieceSet === piece.id ? "active" : ""}
-                onClick={() => void update({ pieceSet: piece.id })}
+                key={set.id}
+                className="piece-swatch"
+                data-pieces={set.id}
+                aria-pressed={settings.pieceSet === set.id}
+                onClick={() => void update({ pieceSet: set.id })}
               >
-                {piece.label}
+                <span className="pcs">
+                  <Piece type="n" color="w" />
+                  <Piece type="k" color="b" />
+                </span>
+                {set.label}
               </button>
             ))}
           </div>
+          <p className="panel-hint">
+            All six sets are original vector geometry drawn for this project — no font glyphs,
+            no scraped assets.
+          </p>
         </div>
-        <div className="row between wrap">
-          <div className="seg" role="group" aria-label="Orientation">
+
+        <div className="field">
+          <label>Default orientation</label>
+          <div className="seg">
             <button
-              className={settings.orientation === "white" ? "active" : ""}
+              aria-pressed={settings.orientation === "white"}
               onClick={() => void update({ orientation: "white" })}
             >
               Play as White
             </button>
             <button
-              className={settings.orientation === "black" ? "active" : ""}
+              aria-pressed={settings.orientation === "black"}
               onClick={() => void update({ orientation: "black" })}
             >
               Play as Black
             </button>
           </div>
-          <label className="row small dim" style={{ gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={settings.reduceMotion}
-              onChange={(event) => void update({ reduceMotion: event.target.checked })}
-              style={{ width: 16, minHeight: 16 }}
-            />
-            Reduce motion
-          </label>
         </div>
-      </div>
 
-      <div className="card stack">
-        <h2>Engine &amp; AI</h2>
+        <div>
+          <Switch
+            title="Reduce motion"
+            detail="Replaces movement with instant positional updates."
+            checked={settings.reduceMotion}
+            onChange={(next) => void update({ reduceMotion: next })}
+          />
+          <Switch
+            title="Atmosphere"
+            detail="The procedural grain, grid and glow behind the interface."
+            checked={settings.atmosphere}
+            onChange={(next) => void update({ atmosphere: next })}
+          />
+          <Switch
+            title="Contextual cursor"
+            detail="Desktop only: coordinate read-out over the board, inspect ring over data."
+            checked={settings.customCursor}
+            onChange={(next) => void update({ customCursor: next })}
+          />
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------------ engine */}
+      <section className="panel stack">
+        <div className="panel-head">
+          <div>
+            <div className="panel-eyebrow">Engine</div>
+            <div className="panel-title">Analysis and local AI</div>
+          </div>
+        </div>
         <dl className="kv">
           <dt>Engine</dt>
           <dd>
             {ENGINE_BUILD.npmPackage}@{ENGINE_BUILD.packageVersion} ({ENGINE_BUILD.variant})
           </dd>
-          <dt>Device</dt>
+          <dt>Device class</dt>
           <dd>
-            {device ? `${classifyDevice(device)} · ${device.cores} cores · ${device.webGpu ? "WebGPU" : "no WebGPU"}` : "detecting…"}
+            {device
+              ? `${classifyDevice(device)} · ${device.cores} cores · ${device.webGpu ? "WebGPU" : "no WebGPU"}`
+              : "detecting…"}
           </dd>
-          <dt>Local AI Coach</dt>
+          <dt>Local coach</dt>
           <dd>
             {localCoach.isAvailable()
-              ? `available — ${selectModelProfile(device ?? { cores: 4, memoryGb: null, webGpu: false, webAssembly: true, coarsePointer: false }).label}`
-              : "not installed in this build (deterministic coach active)"}
+              ? `available — ${
+                  selectModelProfile(
+                    device ?? { cores: 4, memoryGb: null, webGpu: false, webAssembly: true, coarsePointer: false },
+                  ).label
+                }`
+              : "deterministic rules active (Gemma runtime not installed)"}
           </dd>
         </dl>
 
-        <div>
-          <div className="small dim">Analysis intensity</div>
-          <div className="seg" role="group" aria-label="Analysis intensity">
+        <div className="field">
+          <label>Analysis intensity</label>
+          <div className="seg">
             {(["fast", "standard", "deep"] as const).map((level) => (
               <button
                 key={level}
-                className={settings.analysisIntensity === level ? "active" : ""}
+                aria-pressed={settings.analysisIntensity === level}
                 onClick={() => void update({ analysisIntensity: level })}
               >
                 {level}
               </button>
             ))}
           </div>
+          <p className="panel-hint">
+            {INTENSITY_SETTINGS[settings.analysisIntensity].shallow} sweep →{" "}
+            {INTENSITY_SETTINGS[settings.analysisIntensity].deep} verification of the top{" "}
+            {INTENSITY_SETTINGS[settings.analysisIntensity].moments} moments.
+          </p>
         </div>
 
-        <label className="row small dim" style={{ gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={settings.backgroundAnalysis}
-            onChange={(event) => void update({ backgroundAnalysis: event.target.checked })}
-            style={{ width: 16, minHeight: 16 }}
-          />
-          Background analysis (pauses when the tab is hidden when off)
-        </label>
+        <Switch
+          title="Background analysis"
+          detail="Pauses automatically when the tab is hidden or the battery is low."
+          checked={settings.backgroundAnalysis}
+          onChange={(next) => void update({ backgroundAnalysis: next })}
+        />
 
-        <div className="small faint">
-          Model profiles: {Object.values(MODEL_PROFILES).map((p) => p.label).join(" · ")}
+        <p className="panel-hint">
+          Model profiles available for a future local runtime:{" "}
+          {Object.values(MODEL_PROFILES)
+            .map((profile) => profile.label)
+            .join(" · ")}
           {modelState.state === "downloading" && (
             <> — downloading {Math.round((modelState.loadedMb / modelState.totalMb) * 100)}%</>
           )}
-        </div>
-      </div>
+        </p>
+      </section>
 
-      <div className="card stack">
-        <h2>Data</h2>
-        <p className="dim small">
-          Your games stay on your device. Export a full backup (games, analyses, profile,
-          settings, training, coach history) as JSON.
+      {/* -------------------------------------------------------------- data */}
+      <section className="panel stack">
+        <div className="panel-head">
+          <div>
+            <div className="panel-eyebrow">Data</div>
+            <div className="panel-title">
+              {player.total} game{player.total === 1 ? "" : "s"} · {player.analysed} analysed
+            </div>
+          </div>
+        </div>
+        <p className="prose small">
+          Everything lives in IndexedDB on this device. Export a full backup (games, reviews,
+          profile, settings, training, coach history) as JSON, or restore one.
         </p>
         <div className="btn-row">
           <button
@@ -246,20 +397,34 @@ export default function SettingsPage() {
           <button
             className="btn small danger"
             onClick={() => {
-              if (!window.confirm("Erase ALL local data (games, analyses, profile, settings)? This cannot be undone.")) return;
+              if (
+                !window.confirm(
+                  "Erase ALL local data (games, analyses, profile, settings, training)? This cannot be undone.",
+                )
+              )
+                return;
               void db
-                .transaction("rw", db.games, db.analyses, db.profile, db.settings, db.trainingItems, async () => {
-                  await Promise.all([
-                    db.games.clear(),
-                    db.analyses.clear(),
-                    db.profile.clear(),
-                    db.settings.clear(),
-                    db.trainingItems.clear(),
-                  ]);
-                })
+                .transaction(
+                  "rw",
+                  db.games,
+                  db.analyses,
+                  db.profile,
+                  db.settings,
+                  db.trainingItems,
+                  async () => {
+                    await Promise.all([
+                      db.games.clear(),
+                      db.analyses.clear(),
+                      db.profile.clear(),
+                      db.settings.clear(),
+                      db.trainingItems.clear(),
+                    ]);
+                  },
+                )
                 .then(() => db.coachMessages.clear())
                 .then(() => {
                   void update(DEFAULT_SETTINGS);
+                  void player.refresh();
                   setDataNotice("All local data erased.");
                 });
             }}
@@ -279,34 +444,43 @@ export default function SettingsPage() {
             void file
               .text()
               .then(importBackupData)
-              .then((outcome) =>
+              .then((outcome) => {
+                void player.refresh();
                 setDataNotice(
-                  `Restored: ${outcome.gamesImported} games (${outcome.gamesSkipped} duplicates skipped), ${outcome.analysesImported} analyses, ${outcome.trainingImported} training items.`,
-                ),
-              )
+                  `Restored ${outcome.gamesImported} games (${outcome.gamesSkipped} duplicates skipped), ${outcome.analysesImported} reviews, ${outcome.trainingImported} training items.`,
+                );
+              })
               .catch((error: unknown) =>
-                setDataNotice(`Import failed: ${error instanceof Error ? error.message : String(error)}`),
+                setDataNotice(
+                  `Import failed: ${error instanceof Error ? error.message : String(error)}`,
+                ),
               );
           }}
         />
-        {dataNotice && <div className="chip gold">{dataNotice}</div>}
-      </div>
+        {dataNotice && <div className="chip jade" role="status">{dataNotice}</div>}
+      </section>
 
-      <div className="card stack">
-        <h2>About</h2>
-        <p className="small dim">
-          Chess Intelligence — <em>Understand your chess. Improve deliberately.</em>
-        </p>
-        <p className="small dim">
-          Privacy: games, analysis, coach conversations, statistics and settings are stored in
-          IndexedDB on this device only. No chess data is sent to any cloud AI. The coach runs
-          locally (Gemma) or uses deterministic rule-based explanations — it never pretends.
+      {/* ------------------------------------------------------------- about */}
+      <section className="panel stack">
+        <div className="panel-head">
+          <div>
+            <div className="panel-eyebrow">About</div>
+            <div className="panel-title">Chess Intelligence</div>
+          </div>
+          <a className="btn small ghost" href="#/diagnostics">
+            Diagnostics
+          </a>
+        </div>
+        <p className="prose small">
+          <em>Understand your chess. Improve deliberately.</em> Games, reviews, coach
+          conversations, statistics and settings are stored on this device only. No chess data
+          leaves the browser, and the coach labels every claim with its source.
         </p>
         <p className="small faint">
-          Engine: Stockfish via GPL-3.0 npm build {ENGINE_BUILD.packageVersion}. Source:{" "}
-          {ENGINE_BUILD.source}. Full license inventory: docs/licenses.md.
+          Engine: Stockfish {ENGINE_BUILD.packageVersion} via the GPL-3.0 npm build. Full licence
+          inventory, including the two self-hosted typefaces: docs/licenses.md.
         </p>
-      </div>
+      </section>
     </div>
   );
 }

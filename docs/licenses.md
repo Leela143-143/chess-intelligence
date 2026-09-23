@@ -1,8 +1,8 @@
-# License Inventory (Phase 0)
+# License Inventory
 
-Audit of the reference project and of assets/dependencies planned for
-**Chess Intelligence**. This file is the Phase-0 inventory; the product keeps its
-own authoritative copy at `chess-intelligence/docs/licenses.md`, kept in sync.
+Authoritative licensing record for **Chess Intelligence**. Started as the
+Phase-0 audit of the reference project and dependencies; kept current as assets
+and dependencies are added (Phase 1 code, Phase 2 typefaces and visual system).
 
 ---
 
@@ -43,9 +43,57 @@ own authoritative copy at `chess-intelligence/docs/licenses.md`, kept in sync.
 - Phase 1 uses **original** inline SVG/typographic piece glyphs (our own drawings /
   Unicode chess glyphs) and CSS-generated board squares — **no third-party images,
   no hotlinking**.
+- Phase 2 keeps that rule: all six board themes and all six piece sets are
+  **generated from one original SVG geometry plus CSS custom properties**
+  (`src/components/Piece.tsx`, `src/styles/tokens.css`). No binary image was
+downloaded from any search engine or stock site. See `src/assets/README.md`.
 - Any future piece set or board texture must be added here with
   `{ source, author, license, attribution, asset version }` before shipping
   (`public/assets/manifest.json`).
+
+---
+
+## 2b. Phase 2 — typefaces (redistributed binaries)
+
+Three font files are self-hosted in `public/fonts/` (needed for an offline-first
+PWA). Both families are SIL Open Font License 1.1, which permits redistribution
+and web embedding, including in a GPL-3.0 work.
+
+| File | Family / style | Copyright holder | License | Source |
+|---|---|---|---|---|
+| `instrument-serif-latin.woff2` | Instrument Serif 400 | Copyright 2022 The Instrument Serif Project Authors | **SIL OFL 1.1** | https://github.com/Instrument/instrument-serif |
+| `instrument-serif-italic-latin.woff2` | Instrument Serif 400 Italic | Copyright 2022 The Instrument Serif Project Authors | **SIL OFL 1.1** | https://github.com/Instrument/instrument-serif |
+| `inter-latin-var.woff2` | Inter Variable 100–900 | Copyright 2016 The Inter Project Authors | **SIL OFL 1.1** | https://github.com/rsms/inter |
+
+- License text: `public/fonts/OFL.txt` (SIL OFL 1.1).
+- Per-file attribution: `public/fonts/README.md`.
+- Both files are the upstream **latin subsets**, unmodified (no renaming, no
+  re-subsetting, no modification of glyph outlines). Redistribution permitted;
+  no Reserved Font Name conflict because nothing is modified.
+- Attribution shown to the user: the Diagnostics screen lists the type faces and
+  their licenses (`#/diagnostics`).
+
+---
+
+## 2c. Phase 2 — motion, 3D and visual effects
+
+| Technology | License | Where | Redistribution |
+|---|---|---|---|
+| CSS transitions/animations + Web Animations | — (platform) | all motion | n/a |
+| SVG (inline paths, gradients, filters) | — (platform) | pieces, evaluation graph, radar, arrows | n/a |
+| IntersectionObserver / rAF ambient layer | — (platform) | `src/components/ambient.tsx` | n/a |
+| No GSAP / Framer Motion / Three.js | — | deliberately not added | No animation dependency was added: the motion system is CSS + SVG + rAF, so there is no extra license surface and no extra payload (brief §50). |
+
+---
+
+## 2d. Phase 2 — no scraped assets, verified
+
+- `git grep -nE "https?://.*\.(png|jpe?g|gif|webp|svg)"` returns nothing: no remote
+  image is referenced from code or CSS.
+- Board themes and piece sets are computed from tokens, so a new theme adds zero
+  bytes and zero licensing risk.
+- The only binary assets in the repository are the Stockfish WASM build (GPL-3.0,
+  §2) and the three OFL font files (§2b).
 
 ### Opening data / puzzle data
 
@@ -72,4 +120,6 @@ own authoritative copy at `chess-intelligence/docs/licenses.md`, kept in sync.
 - [ ] Record exact `stockfish` npm version resolved at build (done automatically in
       diagnostics screen / `src/lib/engine/stockfishVersion.ts`).
 - [ ] Phase 4: record Gemma model id/quantization/hub; no weight redistribution.
+- [x] Typefaces: OFL-1.1 files shipped with license text and attribution (§2b).
+- [x] No scraped/stock imagery, no hotlinked assets (§2d).
 - [ ] Keep `public/assets/manifest.json` complete for every visual asset.

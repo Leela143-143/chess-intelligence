@@ -1,42 +1,49 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-
-export type Command = {
-  id: string;
-  label: string;
-  run: () => void;
-};
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { CommandResult } from "@/lib/commands";
 
 /**
- * Command palette (spec §78).
- * Desktop: Ctrl/Cmd+K (registered in App). Mobile: Search button in topbar.
+ * CommandCenter (brief §39).
+ *
+ * Cmd/Ctrl + K (or `/`) opens a palette that searches *the player's chess*:
+ * results, colours, openings, blunder plies, endgame errors and training. The
+ * static commands are always available; the dynamic half comes from
+ * `lib/commands.ts`, which parses the query into real database filters.
  */
-export default function CommandPalette({
+
+export default function CommandCenter({
   commands,
+  search,
+  suggestions = [],
   onClose,
 }: {
-  commands: Command[];
+  commands: CommandResult[];
+  search?: (query: string) => CommandResult[];
+  suggestions?: string[];
   onClose: () => void;
-}) {
+}): ReactNode {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
-  }, [commands, query]);
+  const results = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    const staticMatches = text
+      ? commands.filter((command) => command.label.toLowerCase().includes(text))
+      : commands;
+    const dynamic = search && text.length >= 3 ? search(query) : [];
+    const seen = new Set<string>();
+    return [...dynamic, ...staticMatches].filter((command) => {
+      if (seen.has(command.id)) return false;
+      seen.add(command.id);
+      return true;
+    });
+  }, [commands, query, search]);
 
-  const run = (command: Command | undefined) => {
+  const run = (command: CommandResult | undefined) => {
     if (!command) return;
     command.run();
     onClose();
@@ -48,44 +55,73 @@ export default function CommandPalette({
         className="palette"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
-        aria-label="Command palette"
+        aria-modal="true"
+        aria-label="Search your chess"
       >
         <input
           ref={inputRef}
+          className="palette-input"
           type="text"
           value={query}
-          placeholder="Type a command — analyze, import, settings…"
+          placeholder="Search your chess — results, openings, mistakes…"
+          aria-label="Search your chess"
           onChange={(event) => {
             setQuery(event.target.value);
             setIndex(0);
           }}
           onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
+            if (event.key === "Escape") {
               event.preventDefault();
-              setIndex((i) => Math.min(i + 1, filtered.length - 1));
+              onClose();
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setIndex((current) => Math.min(current + 1, results.length - 1));
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
-              setIndex((i) => Math.max(i - 1, 0));
+              setIndex((current) => Math.max(current - 1, 0));
             } else if (event.key === "Enter") {
               event.preventDefault();
-              run(filtered[index]);
+              run(results[index]);
             }
           }}
         />
-        <div className="items">
-          {filtered.length === 0 && (
-            <div className="item" aria-disabled>
-              No matching command
+
+        {query.trim().length < 3 && suggestions.length > 0 && (
+          <div className="palette-hint" aria-label="Suggested searches">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                className="btn small ghost"
+                onClick={() => {
+                  setQuery(suggestion);
+                  setIndex(0);
+                  inputRef.current?.focus();
+                }}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="items" role="listbox" aria-label="Commands">
+          {results.length === 0 && (
+            <div className="item" aria-disabled="true">
+              <span className="label">Nothing matched that. Try a colour, a result or an opening.</span>
             </div>
           )}
-          {filtered.map((command, i) => (
+          {results.map((command, position) => (
             <button
               key={command.id}
-              className={`item ${i === index ? "active" : ""}`}
+              role="option"
+              aria-selected={position === index}
+              className={`item ${position === index ? "active" : ""}`}
               onClick={() => run(command)}
-              onMouseEnter={() => setIndex(i)}
+              onMouseEnter={() => setIndex(position)}
             >
-              {command.label}
+              <span className="kind">{command.kind}</span>
+              <span className="label">{command.label}</span>
+              {command.detail && <span className="kbd">{command.detail}</span>}
             </button>
           ))}
         </div>

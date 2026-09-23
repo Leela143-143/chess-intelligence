@@ -32,6 +32,21 @@ export function useRoute(): string {
   return useSyncExternalStore(subscribe, getHash, () => "/");
 }
 
+/**
+ * Split "#/games?f=loss&q=sicilian" into its path and its parameters.
+ * Pages receive the parsed params so deep links work (brief §39).
+ */
+export function splitRoute(route: string): { path: string; params: URLSearchParams } {
+  const [path, query = ""] = route.split("?");
+  return { path: path || "/", params: new URLSearchParams(query) };
+}
+
+/** Scroll to the top on a real route change (not on query-only changes). */
+export function scrollToTop(): void {
+  if (typeof window === "undefined") return;
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
 export function navigate(to: string): void {
   window.location.hash = to;
   emit();
