@@ -20,6 +20,13 @@ export type GameRecord = {
   headers: PgnHeaders;
   sanList: string[];
   uciList: string[];
+  /**
+   * Phase 2.5: per-ply seconds on the clock from PGN `%clk` annotations.
+   * `null` where the source carried no clock. Absent on games imported before
+   * clock support existed, which the time-management analysis reports honestly
+   * instead of assuming.
+   */
+  clocks?: Array<number | null>;
   result: string;
   pgn: string;
   openingEco?: string;

@@ -1,9 +1,11 @@
-import { Chess, type PieceSymbol } from "chess.js";
+import { Chess, type PieceSymbol, type Square } from "chess.js";
 import { classifyMove, toCp, type MoveClassification } from "./classification";
+import { classifyExceptional } from "./exceptional";
 import { CRITICAL_MOMENT_CP_THRESHOLD, accuracyFromLosses, acplFromLosses } from "./metrics";
 import { detectPhase } from "./phase";
 import { detectTacticsAfterMove, type TacticTheme } from "./tactics";
 import { detectOpening, type OpeningMatch } from "./openings";
+import { legalMoveCountOf, staticExchange } from "./position";
 import { START_FEN, applyUci, replayLine, uciToSan, plyLabel } from "./replay";
 import {
   INTENSITY_SETTINGS,
@@ -54,12 +56,26 @@ export type AnalyzeGameArgs = {
   engineBuild?: string;
   /** Hard cap on plies to review; longer games are truncated honestly. */
   maxPlies?: number;
+  /**
+   * Per-ply seconds remaining on the clock (from PGN `%clk`). Supplying this
+   * turns the time-management dimension from a guess into measured evidence.
+   */
+  clocks?: Array<number | null>;
 };
 
 const MOTIF_PLY_CAP = 240;
 
+/**
+ * Upper bound on extra deep searches spent hunting for brilliant moves
+ * (Phase 2.5). Each candidate costs two searches, so this is the main control
+ * on the added mobile cost of the hunt.
+ */
+const BRILLIANT_HUNT_MAX = 3;
+
 function emptyCounts(): ClassificationCounts {
   return {
+    brilliant: 0,
+    exceptional: 0,
     best: 0,
     excellent: 0,
     good: 0,
@@ -186,6 +202,14 @@ export function explainMoment(args: {
     : "";
 
   switch (args.kind) {
+    case "brilliant":
+      parts.push(
+        `${plyLabel(args.ply, args.san)} is a sound sacrifice — the engine endorses it.`,
+      );
+      break;
+    case "exceptional":
+      parts.push(`${plyLabel(args.ply, args.san)} is the hardest move in the game to find.`);
+      break;
     case "allowed-mate": {
       const n = args.mateAfter !== null ? Math.abs(args.mateAfter) : null;
       parts.push(
@@ -262,7 +286,13 @@ function summarise(
     mistakePlies: own.filter((m) => m.classification === "mistake").map((m) => m.ply),
     inaccuracyPlies: own.filter((m) => m.classification === "inaccuracy").map((m) => m.ply),
     bestPlies: own
-      .filter((m) => m.classification === "best" || m.classification === "only-move")
+      .filter(
+        (m) =>
+          m.classification === "best" ||
+          m.classification === "only-move" ||
+          m.classification === "brilliant" ||
+          m.classification === "exceptional",
+      )
       .map((m) => m.ply),
     phaseAcpl,
     phaseCount,
@@ -384,6 +414,71 @@ export function assessMove(args: {
   };
 }
 
+/** Convert a White-perspective score to the mover's perspective. */
+function moverCpOf(whiteCp: number, mover: "w" | "b"): number {
+  return mover === "w" ? whiteCp : -whiteCp;
+}
+
+/**
+ * Cheap, engine-free pre-filter for the brilliant hunt.
+ *
+ * Asks: does this move leave material on its destination square that the
+ * opponent can win by force? Sacrifices whose point is several moves away are
+ * still caught later, by the main line the exceptional engine walks.
+ */
+function offersMaterial(move: MoveAssessment): boolean {
+  const to = move.uci.slice(2, 4);
+  if (to.length !== 2) return false;
+  const opponent = move.mover === "w" ? "b" : "w";
+  try {
+    return staticExchange(move.fenAfter, to as Square, opponent) >= 2;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run the exceptional-move engine on a deep-analysed ply and adopt its verdict
+ * when it has one.
+ *
+ * Shared by the critical-moment pass and the brilliant hunt so both apply
+ * exactly the same rules — a move can never be brilliant in one place and
+ * ordinary in another.
+ */
+function applyExceptional(
+  move: MoveAssessment,
+  deepBefore: EngineEvaluation,
+  deepAfter: EngineEvaluation,
+  shallowBeforeCp: number,
+  shallowBestUci: string | null,
+  refinedClassification: MoveClassification,
+): void {
+  const alternatives = (deepBefore.alternatives ?? [])
+    .filter((line) => Boolean(line.bestMove))
+    .map((line) => ({ uci: line.bestMove as string, cp: moverCpOf(line.scoreCp, move.mover) }));
+
+  const result = classifyExceptional({
+    playedUci: move.uci,
+    fenBefore: move.fenBefore,
+    fenAfter: move.fenAfter,
+    mover: move.mover,
+    beforeCp: moverCpOf(deepBefore.scoreCp, move.mover),
+    afterCp: moverCpOf(deepAfter.scoreCp, move.mover),
+    bestUci: move.bestUci,
+    alternatives,
+    pv: deepBefore.pv,
+    shallowBeforeCp: moverCpOf(shallowBeforeCp, move.mover),
+    shallowBestUci,
+    legalMoves: legalMoveCountOf(move.fenBefore) ?? 20,
+    isBook: refinedClassification === "book",
+    forced: refinedClassification === "forced",
+    motifs: move.motifs,
+  });
+
+  move.exceptional = result.evidence;
+  if (result.classification) move.classification = result.classification;
+}
+
 export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> {
   const started = Date.now();
   const intensity = args.intensity ?? "standard";
@@ -474,6 +569,23 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
     );
   }
 
+  // Attach clock evidence where the source PGN provided it. Thinking time is
+  // the drop from the previous clock value for the same side, so the first
+  // move of each side has no measurable think time and stays null.
+  if (args.clocks && args.clocks.length > 0) {
+    const lastSeen: Record<"w" | "b", number | null> = { w: null, b: null };
+    for (const move of moves) {
+      const remaining = args.clocks[move.ply - 1] ?? null;
+      move.clockSeconds = remaining;
+      const previous = lastSeen[move.mover];
+      move.thinkSeconds =
+        remaining !== null && previous !== null && previous >= remaining
+          ? Math.round(previous - remaining)
+          : null;
+      if (remaining !== null) lastSeen[move.mover] = remaining;
+    }
+  }
+
   /* ----------------------------------------- stage 2: critical detection */
   report({ stage: "critical", ratio: 0.62, text: "Ranking the turning points…" });
 
@@ -490,6 +602,10 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
     checkAbort();
     const entry = chosen[i]!;
     const move = entry.move;
+    // Shallow evidence must be captured before the deep pass overwrites it —
+    // it is what the stability estimate is computed from.
+    const shallowBeforeCp = move.evalBeforeCp;
+    const shallowBestUci = move.bestUci;
     try {
       const deepBefore = await args.analyze(move.fenBefore, deepStrength);
       cache.set(move.fenBefore, deepBefore);
@@ -500,6 +616,11 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
       // measured with the deeper search on both sides of the decision.
       const deepAfter = await args.analyze(move.fenAfter, deepStrength);
       cache.set(move.fenAfter, deepAfter);
+
+      // Real legal move count, read from the position (Phase 2.5 fix — this
+      // used to be the literal 20, which silently mis-scored forced lines).
+      const legalMoveCount = legalMoveCountOf(move.fenBefore) ?? 20;
+
       const refined = classifyMove({
         playedUci: move.uci,
         bestUci: move.bestUci,
@@ -508,7 +629,7 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
         evalAfterCp: deepAfter.scoreCp,
         evalAfterMate: deepAfter.mateIn,
         mover: move.mover,
-        legalMoveCount: 20,
+        legalMoveCount,
       });
       move.evalBeforeCp = deepBefore.scoreCp;
       move.evalBeforeMate = deepBefore.mateIn;
@@ -519,6 +640,10 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
       move.classification = refined.classification;
       move.deep = true;
       deepPlies += 1;
+
+      // Phase 2.5: the deep pass is the only place with both MultiPV lines and
+      // both search strengths, so it is where brilliant/exceptional is decided.
+      applyExceptional(move, deepBefore, deepAfter, shallowBeforeCp, shallowBestUci, refined.classification);
 
       // What the engine's own move would have led to.
       if (move.bestUci) {
@@ -543,52 +668,111 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
     });
   }
 
+  /* ------------------------------------------- stage 3: brilliant hunt */
+  // Brilliant moves are never errors, so momentKind() can never surface them.
+  // We pre-filter without the engine (material offered, evaluation held) and
+  // only pay for a deep MultiPV search on the few survivors, which keeps the
+  // extra cost bounded on mobile.
+  const brilliantCandidates = moves
+    .filter((move) => !move.deep)
+    .filter((move) => move.cpLoss <= 20 && move.classification === "best")
+    .filter(offersMaterial)
+    // Most promising first: the sacrifices where the mover is best placed.
+    .sort((a, b) => moverCp(b.evalAfterCp, b.mover) - moverCp(a.evalAfterCp, a.mover))
+    .slice(0, BRILLIANT_HUNT_MAX);
+
+  for (const move of brilliantCandidates) {
+    checkAbort();
+    const shallowBeforeCp = move.evalBeforeCp;
+    const shallowBestUci = move.bestUci;
+    try {
+      const deepBefore = await args.analyze(move.fenBefore, deepStrength);
+      const deepAfter = await args.analyze(move.fenAfter, deepStrength);
+      cache.set(move.fenBefore, deepBefore);
+      cache.set(move.fenAfter, deepAfter);
+      move.bestUci = deepBefore.bestMove ?? move.bestUci;
+      move.bestSan = move.bestUci ? uciToSan(move.fenBefore, move.bestUci) : move.bestSan;
+      move.pv = deepBefore.pv;
+      move.evalBeforeCp = deepBefore.scoreCp;
+      move.evalBeforeMate = deepBefore.mateIn;
+      move.evalAfterCp = deepAfter.scoreCp;
+      move.evalAfterMate = deepAfter.mateIn;
+      move.deep = true;
+      move.cpLoss = Math.max(0, moverCpOf(deepBefore.scoreCp, move.mover) - moverCpOf(deepAfter.scoreCp, move.mover));
+      applyExceptional(move, deepBefore, deepAfter, shallowBeforeCp, shallowBestUci, "best");
+      deepPlies += 1;
+    } catch (error) {
+      if (error instanceof AnalysisAbortedError) throw error;
+      // An unconfirmed candidate simply stays an ordinary "best" move.
+    }
+    report({
+      stage: "deep",
+      ratio: 0.95,
+      text: "Confirming the brightest idea…",
+      ply: move.ply,
+    });
+  }
+
   /* ------------------------------------------------------------ summarise */
   report({ stage: "summarise", ratio: 0.97, text: "Writing your summary…" });
 
-  const moments: KeyMoment[] = chosen
-    .map((entry) => {
-      const move = entry.move;
-      const { explanation, lesson } = explainMoment({
-        kind: entry.kind,
-        mover: move.mover,
-        san: move.san,
-        ply: move.ply,
-        cpLoss: move.cpLoss,
-        evalBeforeCp: move.evalBeforeCp,
-        evalAfterCp: move.evalAfterCp,
-        mateBefore: move.evalBeforeMate,
-        mateAfter: move.evalAfterMate,
-        phase: move.phase,
-        classification: move.classification,
-        motifs: move.motifs,
-        bestSan: move.bestSan,
-      });
-      return {
-        ply: move.ply,
-        kind: entry.kind,
-        san: move.san,
-        mover: move.mover,
-        fenBefore: move.fenBefore,
-        fenAfter: move.fenAfter,
-        evalBeforeCp: move.evalBeforeCp,
-        evalAfterCp: move.evalAfterCp,
-        mateBefore: move.evalBeforeMate,
-        mateAfter: move.evalAfterMate,
-        cpLoss: move.cpLoss,
-        bestUci: move.bestUci,
-        bestSan: move.bestSan,
-        ...(move.bestChildCp !== undefined ? { bestChildCp: move.bestChildCp } : {}),
-        classification: move.classification,
-        phase: move.phase,
-        motifs: move.motifs,
-        allowedMotifs: move.allowedMotifs,
-        explanation,
-        lesson,
-        deep: move.deep,
-      };
-    })
-    .sort((a, b) => a.ply - b.ply);
+  const toMoment = (move: MoveAssessment, kind: KeyMomentKind): KeyMoment => {
+    const { explanation, lesson } = explainMoment({
+      kind,
+      mover: move.mover,
+      san: move.san,
+      ply: move.ply,
+      cpLoss: move.cpLoss,
+      evalBeforeCp: move.evalBeforeCp,
+      evalAfterCp: move.evalAfterCp,
+      mateBefore: move.evalBeforeMate,
+      mateAfter: move.evalAfterMate,
+      phase: move.phase,
+      classification: move.classification,
+      motifs: move.motifs,
+      bestSan: move.bestSan,
+    });
+    return {
+      ply: move.ply,
+      kind,
+      san: move.san,
+      mover: move.mover,
+      fenBefore: move.fenBefore,
+      fenAfter: move.fenAfter,
+      evalBeforeCp: move.evalBeforeCp,
+      evalAfterCp: move.evalAfterCp,
+      mateBefore: move.evalBeforeMate,
+      mateAfter: move.evalAfterMate,
+      cpLoss: move.cpLoss,
+      bestUci: move.bestUci,
+      bestSan: move.bestSan,
+      ...(move.bestChildCp !== undefined ? { bestChildCp: move.bestChildCp } : {}),
+      classification: move.classification,
+      phase: move.phase,
+      motifs: move.motifs,
+      allowedMotifs: move.allowedMotifs,
+      explanation,
+      lesson,
+      deep: move.deep,
+      ...(move.exceptional ? { exceptional: move.exceptional } : {}),
+    };
+  };
+
+  const moments: KeyMoment[] = chosen.map((entry) => toMoment(entry.move, entry.kind));
+
+  // Phase 2.5: confirmed brilliant/exceptional plies join the same ranked list,
+  // so The Moment can feature a highlight and not only a mistake.
+  const highlights: KeyMoment[] = moves
+    .filter(
+      (move) =>
+        (move.classification === "brilliant" || move.classification === "exceptional") &&
+        !moments.some((moment) => moment.ply === move.ply),
+    )
+    .map((move) =>
+      toMoment(move, move.classification === "brilliant" ? "brilliant" : "exceptional"),
+    );
+
+  const allMoments: KeyMoment[] = [...moments, ...highlights].sort((a, b) => a.ply - b.ply);
 
   // Built from the final (deep-refined) assessments so the graph and the
   // ranked moments can never disagree with each other.
@@ -609,7 +793,14 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
   let strongest: ReviewedGame["strongest"] = null;
   let bestGain = -Infinity;
   for (const move of moves) {
-    if (move.classification !== "best" && move.classification !== "only-move") continue;
+    if (
+      move.classification !== "best" &&
+      move.classification !== "only-move" &&
+      move.classification !== "brilliant" &&
+      move.classification !== "exceptional"
+    ) {
+      continue;
+    }
     const gain = moverCp(move.evalAfterCp, move.mover) - moverCp(move.evalBeforeCp, move.mover);
     if (gain > bestGain) {
       bestGain = gain;
@@ -625,7 +816,7 @@ export async function analyzeGame(args: AnalyzeGameArgs): Promise<ReviewedGame> 
     plies,
     moves,
     evalPoints,
-    moments,
+    moments: allMoments,
     white: summarise("w", moves),
     black: summarise("b", moves),
     opening,

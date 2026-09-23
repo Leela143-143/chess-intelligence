@@ -80,6 +80,9 @@ export default function GamesPage({ params }: { params?: URLSearchParams }): Rea
           headers: game.headers,
           sanList: game.sanList,
           uciList: game.uciList,
+          // Clock annotations travel with the game so the review can measure
+          // real thinking time (Phase 2.5).
+          ...(game.clocks.length > 0 ? { clocks: game.clocks } : {}),
           result: game.result,
           pgn: game.pgn,
           ...(opening ? { openingEco: opening.eco, openingName: opening.name } : {}),

@@ -16,6 +16,8 @@ import { qualityBand, type MoveAssessment } from "@/lib/chess/review";
  */
 
 const GLYPH: Record<MoveClassification, { glyph: string; cls: string; title: string }> = {
+  brilliant: { glyph: "!!", cls: "g-brilliant", title: "Brilliant sacrifice" },
+  exceptional: { glyph: "!", cls: "g-brilliant", title: "Exceptional move" },
   best: { glyph: "★", cls: "g-best", title: "Best move" },
   excellent: { glyph: "✓", cls: "g-good", title: "Excellent" },
   good: { glyph: "·", cls: "g-good", title: "Good" },

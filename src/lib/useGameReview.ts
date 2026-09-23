@@ -66,6 +66,9 @@ export function useGameReview(
         signals: controller.signal,
         intensity: settings.analysisIntensity,
         engineBuild: `${ENGINE_BUILD.npmPackage}@${ENGINE_BUILD.packageVersion}`,
+        // Clock annotations (when the PGN had them) become real evidence for
+        // the time-management dimension instead of an assumed value.
+        ...(game.clocks && game.clocks.length > 0 ? { clocks: game.clocks } : {}),
         onProgress: (progress) => setState({ status: "running", progress }),
       });
 

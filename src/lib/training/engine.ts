@@ -96,11 +96,80 @@ export function itemsFromGame(source: TrainingSource, limit = 6): GeneratedItem[
   return items;
 }
 
-/** Aggregate generator across games, ranked by size of error. */
+/**
+ * Phase 2.5: positions built from your own *brilliant* and *exceptional* moves.
+ *
+ * These drills are not corrections. They replay a decision you already found
+ * once, so the pattern is recognised faster next time. By construction
+ * `playedSan === bestSan` — the position is a replay, and the reveal confirms
+ * what made the move work rather than criticising a mistake.
+ */
+export function brilliantItemsFromGame(source: TrainingSource, limit = 2): GeneratedItem[] {
+  const items: GeneratedItem[] = [];
+  const candidates = source.moves
+    .filter((move) => !source.color || move.mover === source.color)
+    .filter((move) => move.classification === "brilliant" || move.classification === "exceptional")
+    .sort((a, b) => (b.exceptional?.difficulty ?? 0) - (a.exceptional?.difficulty ?? 0))
+    .slice(0, limit);
+
+  for (const move of candidates) {
+    const line = move.pv && move.pv.length > 0 ? move.pv.slice(0, 3) : move.uci ? [move.uci] : [];
+    if (line.length === 0) continue;
+
+    const solutionSan: string[] = [];
+    let fen = move.fenBefore;
+    for (const uci of line) {
+      const san = uciToSan(fen, uci);
+      if (!san) break;
+      solutionSan.push(san);
+      const next = applyUci(fen, uci);
+      if (!next) break;
+      fen = next;
+    }
+
+    const brilliant = move.classification === "brilliant";
+    // Brilliant and exceptional moves are hard by definition, so the drill
+    // never presents them as easy.
+    const difficulty = Math.max(
+      3,
+      Math.min(5, Math.round(2 + (move.exceptional?.difficulty ?? 0.5) * 3)),
+    );
+
+    items.push({
+      fen: move.fenBefore,
+      solutionUci: line,
+      solutionSan,
+      theme: brilliant ? "brilliant sacrifice" : "exceptional find",
+      difficulty,
+      source: `game ${source.gameId} · move ${Math.ceil(move.ply / 2)}`,
+      sourceGameId: source.gameId,
+      ply: move.ply,
+      playedSan: move.san,
+      bestSan: move.bestSan ?? move.san,
+      explanation: move.exceptional
+        ? `${move.san} was the move. ${move.exceptional.reasons.join(" ")}`
+        : `${move.san} was the move.`,
+      lesson: brilliant
+        ? "You gave up material here because the position was worth more than the piece. Find that trade-off again."
+        : "This was the hardest move in the game to spot. Look for it faster next time.",
+    });
+  }
+  return items;
+}
+
+/**
+ * Aggregate generator across games, ranked by size of error.
+ *
+ * Brilliant items are appended under a separate, bounded budget so they can
+ * never crowd out the mistake positions the player actually needs to repair.
+ */
 export function generateTrainingItems(
   sources: TrainingSource[],
   limit = 20,
+  options: { brilliantBudget?: number } = {},
 ): GeneratedItem[] {
+  const brilliantBudget = options.brilliantBudget ?? 4;
+
   const all: GeneratedItem[] = [];
   for (const source of sources) {
     all.push(...itemsFromGame(source, 8));
@@ -111,9 +180,25 @@ export function generateTrainingItems(
     const existing = seen.get(item.fen);
     if (!existing || item.difficulty > existing.difficulty) seen.set(item.fen, item);
   }
-  return [...seen.values()]
+  const base = [...seen.values()]
     .sort((a, b) => b.difficulty - a.difficulty)
     .slice(0, limit);
+
+  if (brilliantBudget <= 0) return base;
+
+  const brilliant: GeneratedItem[] = [];
+  for (const source of sources) brilliant.push(...brilliantItemsFromGame(source, 2));
+
+  const usedFens = new Set(base.map((item) => item.fen));
+  const extra: GeneratedItem[] = [];
+  for (const item of brilliant.sort((a, b) => b.difficulty - a.difficulty)) {
+    if (usedFens.has(item.fen)) continue;
+    usedFens.add(item.fen);
+    extra.push(item);
+    if (extra.length >= brilliantBudget) break;
+  }
+
+  return [...base, ...extra];
 }
 
 /* ------------------------------------------------------------------- SRS */

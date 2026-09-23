@@ -1,4 +1,5 @@
 import type { MoveClassification } from "./classification";
+import type { ExceptionalEvidence } from "./exceptional";
 import type { TacticTheme } from "./tactics";
 import type { OpeningMatch } from "./openings";
 
@@ -51,6 +52,17 @@ export type MoveAssessment = {
   bestChildCp?: number | null;
   /** Principal variation from the deep pass (UCI). */
   pv?: string[];
+  /**
+   * Phase 2.5: present whenever the move was tested by the exceptional-move
+   * engine (whether or not it graded as brilliant/exceptional). Carries the
+   * sacrifice, only-move, difficulty, stability and confidence evidence behind
+   * the verdict so the UI and the coach can show their work.
+   */
+  exceptional?: ExceptionalEvidence;
+  /** Seconds left on the mover's clock after this move (from PGN `%clk`). */
+  clockSeconds?: number | null;
+  /** Seconds the mover spent on this move, when clocks are known. */
+  thinkSeconds?: number | null;
 };
 
 export type ClassificationCounts = Record<MoveClassification, number>;
@@ -78,7 +90,11 @@ export type KeyMomentKind =
   | "missed-mate"
   | "allowed-mate"
   | "material-loss"
-  | "defensive-failure";
+  | "defensive-failure"
+  /** Phase 2.5: a sound sacrifice the engine endorses (see exceptional.ts). */
+  | "brilliant"
+  /** Phase 2.5: a hard-to-find, position-changing move that is not a sacrifice. */
+  | "exceptional";
 
 /** A ranked turning point — the raw material for "The Moment" (brief §56). */
 export type KeyMoment = {
@@ -109,6 +125,8 @@ export type KeyMoment = {
   /** A single imperative for the player, derived from the same facts. */
   lesson: string;
   deep: boolean;
+  /** Phase 2.5: the evidence behind a brilliant/exceptional verdict. */
+  exceptional?: ExceptionalEvidence;
 };
 
 export type EvalPoint = {
@@ -180,6 +198,8 @@ export type MoveQualityBand = "best" | "good" | "book" | "inaccuracy" | "mistake
 /** Map a classification to the four-band timeline heat scale. */
 export function qualityBand(classification: MoveClassification): MoveQualityBand | "none" {
   switch (classification) {
+    case "brilliant":
+    case "exceptional":
     case "best":
     case "excellent":
     case "only-move":

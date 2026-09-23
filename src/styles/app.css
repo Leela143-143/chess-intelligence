@@ -1925,6 +1925,14 @@ input[type="checkbox"] {
 .g-best {
   color: var(--pos);
 }
+/* Brilliant and exceptional marks use the single analytical accent rather than
+   a new colour, so the palette stays restrained (design-system §2). */
+.g-brilliant {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 14px var(--accent-soft);
+}
 .g-good {
   color: var(--text-faint);
 }

@@ -43,6 +43,13 @@ export type ImportedGame = {
   finalFen: string | null;
   result: string;
   pgn: string;
+  /**
+   * Seconds remaining on the mover's clock after each ply, from `[%clk ...]`
+   * annotations. `null` where the source PGN carries no clock for that ply.
+   * This is the only genuine source of time-management evidence — without it
+   * the profile must stay provisional rather than invent numbers.
+   */
+  clocks: Array<number | null>;
 };
 
 export type PgnImportError = {
@@ -66,6 +73,72 @@ function sanitizeText(value: string, max = MAX_HEADER_LENGTH): string {
 
 function normalize(raw: string): string {
   return raw.replace(/\r\n?/g, "\n").replace(/\uFEFF/g, "");
+}
+
+const CLOCK_RE = /\[%clk\s+(\d+):([0-5]\d):([0-5]\d(?:\.\d+)?)\s*\]/;
+
+/**
+ * Extract per-ply clock annotations (`{[%clk 0:04:12]}`) from a game chunk.
+ *
+ * Walks the movetext token by token so comments are attached to the move they
+ * actually follow. Variations in parentheses and `;` line comments are
+ * skipped, because clocks inside them describe alternative lines and would
+ * otherwise shift every subsequent ply.
+ *
+ * Returns an array aligned to ply index (0 = White's first move) with `null`
+ * for plies the PGN does not annotate, so a partially-annotated game is still
+ * usable.
+ */
+export function extractClocks(gameChunk: string): Array<number | null> {
+  const text = normalize(gameChunk);
+  const clocks: Array<number | null> = [];
+  let ply = 0;
+  let variationDepth = 0;
+
+  // Strip header lines; only the movetext carries clock annotations.
+  const body = text.replace(/^\s*\[[^\]]*\]\s*$/gm, " ");
+
+  // Parentheses and braces must always become their own tokens: a greedy
+  // `\S+` would swallow `d5)` whole and the variation would never be seen to
+  // close, silently dropping every clock after it.
+  const tokenRe = /\{[^}]*\}|[()]|;[^\n]*|[^\s(){};]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(body)) !== null) {
+    const token = match[0];
+
+    if (token === "(") {
+      variationDepth += 1;
+      continue;
+    }
+    if (token === ")") {
+      variationDepth = Math.max(0, variationDepth - 1);
+      continue;
+    }
+    if (token.startsWith(";")) continue;
+
+    if (token.startsWith("{")) {
+      // A comment belongs to the move just played — ignore it inside a variation.
+      if (variationDepth > 0) continue;
+      const clock = CLOCK_RE.exec(token);
+      if (clock && ply > 0) {
+        const seconds =
+          Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
+        clocks[ply - 1] = seconds;
+      }
+      continue;
+    }
+
+    if (variationDepth > 0) continue;
+    // Move numbers ("12.", "12..."), NAGs ("$14") and results carry no ply.
+    if (/^\d+\.+$/.test(token)) continue;
+    if (/^\$\d+$/.test(token)) continue;
+    if (/^(1-0|0-1|1\/2-1\/2|\*)$/.test(token)) continue;
+
+    ply += 1;
+    if (clocks.length < ply) clocks.push(null);
+  }
+
+  return clocks;
 }
 
 /**
@@ -145,6 +218,7 @@ export function parseSinglePgn(chunk: string): ImportedGame | null {
       finalFen: null,
       result,
       pgn: sanitizeText(normalize(chunk), MAX_PGN_BYTES),
+      clocks: extractClocks(chunk).slice(0, history.length),
     };
   } catch {
     return null;

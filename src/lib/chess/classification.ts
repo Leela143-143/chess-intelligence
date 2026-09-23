@@ -9,6 +9,10 @@
  */
 
 export type MoveClassification =
+  /** Sound material sacrifice the engine endorses — see exceptional.ts. */
+  | "brilliant"
+  /** Hard-to-find, position-changing move that is not a sacrifice. */
+  | "exceptional"
   | "best"
   | "excellent"
   | "good"

@@ -48,7 +48,10 @@ export type CriticalMoment = {
     | "missed-mate"
     | "allowed-mate"
     | "material-loss"
-    | "defensive-failure";
+    | "defensive-failure"
+    // Phase 2.5: highlights join the same ranked list as errors.
+    | "brilliant"
+    | "exceptional";
 };
 
 function toCp(cp: number, mate: number | null): number {

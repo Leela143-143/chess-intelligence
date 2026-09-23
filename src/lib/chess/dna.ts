@@ -107,6 +107,19 @@ export type DnaMeasures = {
   avgGainPawns: number;
   timeControlGames: number;
   timeoutLosses: number;
+  /** Phase 2.5: your moves that carried a real clock reading. */
+  clockPlies: number;
+  /** Errors per 100 timed moves. */
+  clockErrorRate: number | null;
+  /** Timed moves played with 30s or less on the clock. */
+  lowTimeMoves: number;
+  lowTimeErrors: number;
+  /** Errors per 100 moves played short of time. */
+  lowTimeErrorRate: number | null;
+  /** Errors per 100 timed moves played with time in hand. */
+  comfortableErrorRate: number | null;
+  /** Average seconds per move, across timed moves. */
+  avgThinkSeconds: number | null;
   winningPositions: number;
   winningConverted: number;
   blunderRate: number;
@@ -131,7 +144,18 @@ export function computeMeasures(games: DnaGame[]): DnaMeasures {
   let timeControlGames = 0;
   let timeoutLosses = 0;
   let winningPositions = 0;
-  let winningConverted = 0; 
+  let winningConverted = 0;
+  // Phase 2.5 clock evidence — only counted for moves we can attribute to the
+  // player and that actually carry a clock reading.
+  let clockPlies = 0;
+  let clockErrors = 0;
+  let lowTimeMoves = 0;
+  let lowTimeErrors = 0;
+  let comfortableMoves = 0;
+  let comfortableErrors = 0;
+  let thinkSecondsTotal = 0;
+  const LOW_TIME_SECONDS = 30;
+  const COMFORTABLE_SECONDS = 60;
 
   for (const game of games) {
     const own = ownMoves(game);
@@ -160,6 +184,29 @@ export function computeMeasures(games: DnaGame[]): DnaMeasures {
       gains.push(
         fromPerspective(move.evalAfterCp - move.evalBeforeCp, move.mover) / 100,
       );
+
+      // Clock evidence. `thinkSeconds` is only ever set from a real `%clk`
+      // annotation, so nothing here is inferred.
+      if (typeof move.thinkSeconds === "number") {
+        clockPlies += 1;
+        thinkSecondsTotal += move.thinkSeconds;
+        const isError =
+          move.classification === "inaccuracy" ||
+          move.classification === "mistake" ||
+          move.classification === "blunder" ||
+          move.classification === "missed-opportunity";
+        if (isError) clockErrors += 1;
+        const remaining = move.clockSeconds;
+        if (typeof remaining === "number") {
+          if (remaining <= LOW_TIME_SECONDS) {
+            lowTimeMoves += 1;
+            if (isError) lowTimeErrors += 1;
+          } else if (remaining >= COMFORTABLE_SECONDS) {
+            comfortableMoves += 1;
+            if (isError) comfortableErrors += 1;
+          }
+        }
+      }
     }
 
     if (game.color) {
@@ -201,6 +248,13 @@ export function computeMeasures(games: DnaGame[]): DnaMeasures {
     avgGainPawns: mean(gains),
     timeControlGames,
     timeoutLosses,
+    clockPlies,
+    clockErrorRate: clockPlies > 0 ? (clockErrors / clockPlies) * 100 : null,
+    lowTimeMoves,
+    lowTimeErrors,
+    lowTimeErrorRate: lowTimeMoves > 0 ? (lowTimeErrors / lowTimeMoves) * 100 : null,
+    comfortableErrorRate: comfortableMoves > 0 ? (comfortableErrors / comfortableMoves) * 100 : null,
+    avgThinkSeconds: clockPlies > 0 ? thinkSecondsTotal / clockPlies : null,
     winningPositions,
     winningConverted,
     blunderRate: total === 0 ? 0 : blunders / total,
@@ -212,6 +266,51 @@ export function computeMeasures(games: DnaGame[]): DnaMeasures {
 /* ---------------------------------------------------------------- scoring */
 
 const MIN_SAMPLE = 20;
+
+/**
+ * Time-management score from real clock evidence (Phase 2.5).
+ *
+ * When any game carries clock annotations the score is driven by measured
+ * error rates under and away from time pressure. Only when no clock exists at
+ * all do we fall back to the time-forfeit signal — and the detail string says
+ * plainly that the dimension is unmeasured, so the number is never presented
+ * as if it were observed.
+ */
+function timeScore(m: DnaMeasures): number {
+  if (m.clockPlies === 0) {
+    return m.timeControlGames === 0 ? 50 : clamp(100 - 25 * m.timeoutLosses);
+  }
+  let score = 80;
+  // 12% is the reference error rate; drift either way moves the score.
+  if (m.lowTimeErrorRate !== null) score -= 1.2 * (m.lowTimeErrorRate - 12);
+  if (m.clockErrorRate !== null) score -= 0.4 * (m.clockErrorRate - 10);
+  if (m.lowTimeMoves >= 8 && m.lowTimeErrors === 0) score += 10;
+  if (
+    m.comfortableErrorRate !== null &&
+    m.lowTimeErrorRate !== null &&
+    m.comfortableErrorRate > 0
+  ) {
+    const sensitivity = m.lowTimeErrorRate / m.comfortableErrorRate;
+    if (sensitivity > 2) score -= 10;
+    else if (sensitivity < 0.8) score += 5;
+  }
+  return clamp(score);
+}
+
+/** Human explanation for the Time dimension, always stating its sample. */
+function timeDetail(m: DnaMeasures): string {
+  if (m.clockPlies === 0) {
+    return m.timeControlGames === 0
+      ? "no per-move clock in your PGN — time management unmeasured"
+      : `${m.timeoutLosses} loss${m.timeoutLosses === 1 ? "" : "es"} on time across ${m.timeControlGames} timed games — no per-move clock, so unmeasured`;
+  }
+  const parts = [`${m.clockPlies} timed move${m.clockPlies === 1 ? "" : "s"} measured`];
+  if (m.avgThinkSeconds !== null) parts.push(`${m.avgThinkSeconds.toFixed(1)}s average per move`);
+  if (m.lowTimeMoves > 0) {
+    parts.push(`${m.lowTimeErrors}/${m.lowTimeMoves} errors with under 30s left`);
+  }
+  return parts.join(" · ");
+}
 
 function dimension(
   id: DnaDimensionId,
@@ -301,11 +400,11 @@ export function computeChessDna(games: DnaGame[]): ChessDna {
     dimension(
       "timeManagement",
       "Time",
-      m.timeControlGames === 0 ? 50 : 100 - 25 * m.timeoutLosses,
-      m.timeControlGames === 0
-        ? "no per-move clock in your PGN — provisional"
-        : `${m.timeoutLosses} loss${m.timeoutLosses === 1 ? "" : "es"} on time across ${m.timeControlGames} timed games`,
-      m.timeControlGames,
+      timeScore(m),
+      timeDetail(m),
+      // Sample size is the number of *timed moves*, not games: the claim is
+      // about how you spend time, and 400 clock readings is the real evidence.
+      m.clockPlies > 0 ? m.clockPlies : m.timeControlGames,
     ),
     dimension(
       "conversion",
@@ -369,7 +468,7 @@ function rawScores(m: DnaMeasures): Partial<Record<DnaDimensionId, number>> {
     defense: clamp(100 - 2.6 * m.worseAcpl),
     kingSafety: clamp(100 - 210 * m.allowedCheckRate),
     initiative: clamp(50 + 18 * m.avgGainPawns),
-    timeManagement: m.timeControlGames === 0 ? 50 : clamp(100 - 25 * m.timeoutLosses),
+    timeManagement: timeScore(m),
     conversion:
       m.winningPositions === 0 ? 50 : clamp(100 * (m.winningConverted / m.winningPositions)),
   };

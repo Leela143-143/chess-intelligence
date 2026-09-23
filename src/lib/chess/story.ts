@@ -242,6 +242,10 @@ export function buildGameStory(
  */
 export function momentRole(moment: KeyMoment): string {
   switch (moment.kind) {
+    case "brilliant":
+      return "Brilliant sacrifice";
+    case "exceptional":
+      return "Exceptional find";
     case "allowed-mate":
       return "Mate allowed";
     case "missed-mate":
