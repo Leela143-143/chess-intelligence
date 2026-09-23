@@ -3,13 +3,16 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { SettingsProvider } from "@/lib/settingsContext";
 import { EngineProvider } from "@/lib/engineContext";
+import { PlayerProvider } from "@/lib/player/context";
 import "./styles/app.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <SettingsProvider>
       <EngineProvider>
-        <App />
+        <PlayerProvider>
+          <App />
+        </PlayerProvider>
       </EngineProvider>
     </SettingsProvider>
   </StrictMode>,
